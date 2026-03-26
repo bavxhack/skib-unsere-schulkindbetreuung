@@ -150,7 +150,7 @@ class SchuljahrController extends AbstractController
                 return $this->redirectToRoute('city_admin_schuljahr_anzeige', ['id' => $activity->getStadt()->getId(), 'snack' => $text]);
             }
             foreach ($kinder as $kind) {
-                $this->childDeleteService->deleteChild($kind, $this->getUser());
+                $this->childDeleteService->deleteChildWithParentsWithoutNotification($kind, $this->getUser());
             }
 
             $em = $this->managerRegistry->getManager();

@@ -2,21 +2,13 @@
 
 namespace App\Service;
 
-use App\Entity\Active;
-use App\Entity\Anwesenheit;
 use App\Entity\EmailResponse;
 use App\Entity\Kind;
 use App\Entity\Log;
 use App\Entity\Organisation;
-use App\Entity\Payment;
-use App\Entity\PaymentRefund;
-use App\Entity\Rechnung;
-use App\Entity\Stadt;
 
 use App\Entity\Stammdaten;
 use App\Entity\User;
-use App\Entity\Abwesend;
-use App\Entity\Kundennummern;
 use Beelab\Recaptcha2Bundle\Form\Type\RecaptchaType;
 use Doctrine\ORM\EntityManagerInterface;
 use League\Flysystem\FilesystemOperator;
@@ -68,16 +60,40 @@ class ChildDeleteService
     public function deleteChild(Kind $kind, User $user)
     {
         try {
+            $childHist = $this->em->getRepository(Kind::class)->findHistoryOfThisChild($kind);
+            foreach ($childHist as $data){
+                $data->setStartDate(null);
+                $this->em->persist($data);
+            }
+            $this->em->flush();
+
+            $message = 'child Deleted: Tracing' . $kind->getTracing() .
+                'Name: ' . $kind->getVorname().' '.$kind->getNachname() . '; ' .
+                'fos_user_id: ' . $user->getId() . '; ';
+            $log = new Log();
+            $log->setUser($user->getEmail());
+            $log->setDate(new \DateTime());
+            $log->setMessage($message);
+            $this->em->persist($log);
+            $this->em->flush();
+            if ($this->parameterBag->get('noEmailOnDelete') == 0) {
+                $this->sendEmail($kind->getEltern(), $kind, $kind->getSchule()->getOrganisation());
+            }
+
+            return true;
+        } catch (\Exception $exception) {
+            return false;
+        }
+    }
+
+    public function deleteChildWithParentsWithoutNotification(Kind $kind, User $user): bool
+    {
+        try {
             $stammdaten = $kind->getEltern();
             $childHist = $this->em->getRepository(Kind::class)->findHistoryOfThisChild($kind);
             if (sizeof($childHist) === 0) {
                 $childHist = [$kind];
             }
-
-            if ($this->parameterBag->get('noEmailOnDelete') == 0) {
-                $this->sendEmail($kind->getEltern(), $kind, $kind->getSchule()->getOrganisation());
-            }
-
             foreach ($childHist as $data) {
                 $this->removeChildRelationsAndEntity($data);
             }
@@ -88,7 +104,7 @@ class ChildDeleteService
                 $this->em->flush();
             }
 
-            $message = 'child Deleted: Tracing' . $kind->getTracing() .
+            $message = 'child hard deleted (without notification): Tracing' . $kind->getTracing() .
                 'Name: ' . $kind->getVorname().' '.$kind->getNachname() . '; ' .
                 'fos_user_id: ' . $user->getId() . '; ';
             $log = new Log();
