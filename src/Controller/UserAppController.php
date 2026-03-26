@@ -5,6 +5,7 @@ namespace App\Controller;
 use App\Entity\Anwesenheit;
 use App\Entity\Kind;
 use App\Entity\User;
+use App\Repository\ChildSickReportRepository;
 use App\Service\CheckinSchulkindservice;
 use App\Service\ChildSearchService;
 use App\Service\ElternService;
@@ -138,7 +139,7 @@ class UserAppController extends AbstractController
     /**
      * @Route("/get/user/kidsCheckin", name="connect_user_checkinKids", methods={"GET"})
      */
-    public function userCheckinKids(CheckinSchulkindservice $checkinSchulkindservice, Request $request, MailerService $mailerService, TranslatorInterface $translator, ElternService $elternService)
+    public function userCheckinKids(CheckinSchulkindservice $checkinSchulkindservice, ChildSickReportRepository $childSickReportRepository, Request $request, MailerService $mailerService, TranslatorInterface $translator, ElternService $elternService)
     {
         $user = null;
         if ($request->get('communicationToken')) {
@@ -151,9 +152,12 @@ class UserAppController extends AbstractController
         if ($user) {
             $today = new \DateTime();
             $kinder = $checkinSchulkindservice->getAllKidsToday($user->getOrganisation(), $today, $user);
+            $reports = $childSickReportRepository->findForTodayByOrganisation($user->getOrganisation());
+            $sickReportsByKind = $this->mapSickReportsByKind($reports);
             $kinderSend = array();
             foreach ($kinder as $data) {
                 $eltern = $elternService->getLatestElternFromChild($data);
+                $sickReport = $sickReportsByKind[$data->getId()] ?? null;
                 $tmp = array(
                     'name' => $data->getNachname(),
                     'vorname' => $data->getVorname(),
@@ -162,6 +166,10 @@ class UserAppController extends AbstractController
                     'notfallkontakt' => $eltern->getNotfallkontakt(),
                     'klasse' => $data->getKlasse(),
                     'checkin' => true,
+                    'krank' => $sickReport !== null,
+                    'krankVon' => $sickReport?->getVon()?->format('Y-m-d'),
+                    'krankBis' => $sickReport?->getBis()?->format('Y-m-d'),
+                    'krankBemerkung' => $sickReport?->getBemerkung(),
                     'schuleId' => $data->getSchule()->getId(),
                     'hasBirthday' => $this->hasBirthday($data),
                     'detail' => $this->makeHttps($this->generateUrl('connect_user_kidsDetails', array('id' => $data->getId()), UrlGenerator::ABSOLUTE_URL)),
@@ -187,7 +195,7 @@ class UserAppController extends AbstractController
     /**
      * @Route("/get/user/kidsHeuteDa", name="connect_user_kidsDa", methods={"GET"})
      */
-    public function userKidsHeuteDa(SchuljahrService $schuljahrService, ChildSearchService $childSearchService,  Request $request, CheckinSchulkindservice $checkinSchulkindservice, ElternService $elternService)
+    public function userKidsHeuteDa(SchuljahrService $schuljahrService, ChildSearchService $childSearchService, ChildSickReportRepository $childSickReportRepository,  Request $request, CheckinSchulkindservice $checkinSchulkindservice, ElternService $elternService)
     {
         $user = null;
         if ($request->get('communicationToken')) {
@@ -202,9 +210,12 @@ class UserAppController extends AbstractController
             $schuljahr = $schuljahrService->getSchuljahr($user->getStadt());
             $kinder = $childSearchService->searchChild(array('wochentag' => $this->daymapper[$today->format("w")]), $user->getOrganisation(), true, $user);
             $kinderCheckin = $checkinSchulkindservice->getAllKidsToday($user->getOrganisation(), $today, $user);
+            $reports = $childSickReportRepository->findForTodayByOrganisation($user->getOrganisation());
+            $sickReportsByKind = $this->mapSickReportsByKind($reports);
             $kinderSend = array();
             foreach ($kinder as $data) {
                 $eltern = $elternService->getLatestElternFromChild($data);
+                $sickReport = $sickReportsByKind[$data->getId()] ?? null;
                 $tmp = array(
                     'name' => $data->getNachname(),
                     'vorname' => $data->getVorname(),
@@ -213,6 +224,10 @@ class UserAppController extends AbstractController
                     'notfallkontakt' => $eltern->getNotfallkontakt(),
                     'klasse' => $data->getKlasse(),
                     'checkin' => in_array($data, $kinderCheckin),
+                    'krank' => $sickReport !== null,
+                    'krankVon' => $sickReport?->getVon()?->format('Y-m-d'),
+                    'krankBis' => $sickReport?->getBis()?->format('Y-m-d'),
+                    'krankBemerkung' => $sickReport?->getBemerkung(),
                     'schuleId' => $data->getSchule()->getId(),
                     'hasBirthday' => $this->hasBirthday($data),
                     'detail' => $this->makeHttps($this->generateUrl('connect_user_kidsDetails', array('id' => $data->getId()), UrlGenerator::ABSOLUTE_URL)),
@@ -235,6 +250,67 @@ class UserAppController extends AbstractController
         } else {
             return new JsonResponse(array('error' => true, 'errorText' => 'Fehler, bitte versuchen Sie es erneut oder melden Sie das Gerät bei SKIB an'));
         }
+    }
+
+    /**
+     * @Route("/get/user/kidsKrankHeute", name="connect_user_kidsKrankHeute", methods={"GET"})
+     */
+    public function userKidsKrankHeute(ChildSickReportRepository $childSickReportRepository, Request $request, ElternService $elternService)
+    {
+        $user = null;
+        if ($request->get('communicationToken')) {
+            $user = $this->managerRegistry->getRepository(User::class)->findOneBy(array(
+                    'appCommunicationToken' => $request->get('communicationToken')
+                )
+            );
+        }
+
+        if (!$user) {
+            return new JsonResponse(array('error' => true, 'errorText' => 'Fehler, bitte versuchen Sie es erneut oder melden Sie das Gerät bei SKIB an'));
+        }
+
+        $reports = $childSickReportRepository->findForTodayByOrganisation($user->getOrganisation());
+        $kinderSend = array();
+        foreach ($reports as $report) {
+            $kind = $report->getKind();
+            if (!$kind) {
+                continue;
+            }
+
+            if (!in_array($kind->getSchule(), $user->getSchulen()->toArray(), true)) {
+                continue;
+            }
+
+            $eltern = $elternService->getLatestElternFromChild($kind);
+            $kinderSend[] = array(
+                'name' => $kind->getNachname(),
+                'vorname' => $kind->getVorname(),
+                'schule' => $kind->getSchule()->getName(),
+                'erziehungsberechtigter' => $eltern->getVorname() . ' ' . $eltern->getName(),
+                'notfallkontakt' => $eltern->getNotfallkontakt(),
+                'klasse' => $kind->getKlasse(),
+                'checkin' => false,
+                'krank' => true,
+                'krankVon' => $report->getVon()?->format('Y-m-d'),
+                'krankBis' => $report->getBis()?->format('Y-m-d'),
+                'krankBemerkung' => $report->getBemerkung(),
+                'schuleId' => $kind->getSchule()->getId(),
+                'hasBirthday' => $this->hasBirthday($kind),
+                'detail' => $this->makeHttps($this->generateUrl('connect_user_kidsDetails', array('id' => $kind->getId()), UrlGenerator::ABSOLUTE_URL)),
+                'checkinUrl' => $this->makeHttps($this->generateUrl('connect_user_chekcinManuel', array('id' => $kind->getId()), UrlGeneratorInterface::ABSOLUTE_URL)),
+            );
+        }
+
+        $schulen = array();
+        foreach ($user->getSchulen() as $data) {
+            $schulen[] = array('id' => $data->getId(), 'name' => $data->getName());
+        }
+
+        return new JsonResponse(array(
+            'error' => false,
+            'number' => sizeof($kinderSend),
+            'result' => $kinderSend,
+            'schulen' => $schulen));
     }
 
     /**
@@ -340,6 +416,23 @@ class UserAppController extends AbstractController
         $out = str_replace('http', 'https',
             str_replace('https', 'http', $input));
         return $out;
+    }
+
+    private function mapSickReportsByKind(array $reports): array
+    {
+        $sickReportsByKind = array();
+        foreach ($reports as $report) {
+            $kind = $report->getKind();
+            if (!$kind) {
+                continue;
+            }
+
+            if (!array_key_exists($kind->getId(), $sickReportsByKind)) {
+                $sickReportsByKind[$kind->getId()] = $report;
+            }
+        }
+
+        return $sickReportsByKind;
     }
 
     private function hasBirthday(Kind $kind)
