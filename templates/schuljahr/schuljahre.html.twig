@@ -31,6 +31,7 @@
                                         <div class="dropdown-menu dropdown-menu-left" aria-labelledby="ex2">
                                             <a class="dropdown-item" href="{{ path('city_admin_schuljahr_edit',{'id':s.id}) }}">{% trans %}Bearbeiten{% endtrans %}</a>
                                             <a class="dropdown-item" href="{{ path('city_admin_schuljahr_delete',{'id':s.id}) }}">{% trans %}Löschen{% endtrans %}</a>
+                                            <a class="dropdown-item text-danger" href="{{ path('city_admin_schuljahr_delete_with_children',{'id':s.id}) }}">{% trans %}Schuljahr inkl. Kinder löschen{% endtrans %}</a>
                                         </div>
                                     </div>
                                 </td>

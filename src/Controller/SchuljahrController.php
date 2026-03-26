@@ -3,12 +3,15 @@
 namespace App\Controller;
 
 use App\Entity\Active;
+use App\Entity\Kind;
 use App\Entity\Schule;
 use App\Entity\Stadt;
 use App\Form\Type\SchuljahrType;
+use App\Service\ChildDeleteService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Security\Core\Authentication\Token\SwitchUserToken;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
@@ -16,7 +19,11 @@ use Symfony\Contracts\Translation\TranslatorInterface;
 
 class SchuljahrController extends AbstractController
 {
-    public function __construct(private \Doctrine\Persistence\ManagerRegistry $managerRegistry, private Security $security)
+    public function __construct(
+        private \Doctrine\Persistence\ManagerRegistry $managerRegistry,
+        private Security $security,
+        private ChildDeleteService $childDeleteService
+    )
     {
     }
 
@@ -118,6 +125,53 @@ class SchuljahrController extends AbstractController
         $title = $translator->trans('Schuljahr bearbeiten');
         return $this->render('administrator/neu.html.twig', array('title' => $title, 'form' => $form->createView(), 'errors' => $errors));
 
+    }
+
+    /**
+     * @Route("city_admin/stadtschuljahr/delete_with_children", name="city_admin_schuljahr_delete_with_children", methods={"GET","POST"})
+     */
+    public function deleteWithChildren(Request $request, TranslatorInterface $translator): Response
+    {
+        $activity = $this->managerRegistry->getRepository(Active::class)->find($request->get('id'));
+        if (!$activity) {
+            throw $this->createNotFoundException();
+        }
+        if ($activity->getStadt() != $this->getUser()->getStadt()) {
+            throw new \Exception('Wrong Organisation');
+        }
+
+        /** @var Kind[] $kinder */
+        $kinder = $this->managerRegistry->getRepository(Kind::class)->findLatestChildrenForSchuljahr($activity);
+
+        if ($request->isMethod('POST')) {
+            if (!$this->isCsrfTokenValid('delete_schuljahr_with_children_' . $activity->getId(), (string) $request->request->get('_token'))) {
+                $text = $translator->trans('Ungültige Anfrage');
+                return $this->redirectToRoute('city_admin_schuljahr_anzeige', ['id' => $activity->getStadt()->getId(), 'snack' => $text]);
+            }
+            foreach ($kinder as $kind) {
+                $this->childDeleteService->deleteChild($kind, $this->getUser());
+            }
+
+            $em = $this->managerRegistry->getManager();
+            foreach ($activity->getBlocks() as $block) {
+                $block->setDeleted(true);
+                $block->setActive(null);
+                $em->persist($block);
+            }
+            $em->flush();
+            $em->remove($activity);
+            $em->flush();
+
+            $text = $translator->trans('Schuljahr mit kinder_count Kindern und allen Zeitblöcken erfolgreich gelöscht.', [
+                'kinder_count' => sizeof($kinder),
+            ]);
+            return $this->redirectToRoute('city_admin_schuljahr_anzeige', ['id' => $activity->getStadt()->getId(), 'snack' => $text]);
+        }
+
+        return $this->render('schuljahr/deleteWithChildren.html.twig', [
+            'activity' => $activity,
+            'kinder' => $kinder,
+        ]);
     }
 
     /**
