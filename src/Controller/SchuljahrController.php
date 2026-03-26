@@ -132,6 +132,7 @@ class SchuljahrController extends AbstractController
      */
     public function deleteWithChildren(Request $request, TranslatorInterface $translator): Response
     {
+        $this->denyAccessUnlessGranted('ROLE_CITY_SCHOOLYEAR_DELETE');
         $activity = $this->managerRegistry->getRepository(Active::class)->find($request->get('id'));
         if (!$activity) {
             throw $this->createNotFoundException();
@@ -179,6 +180,7 @@ class SchuljahrController extends AbstractController
      */
     public function delete(Request $request, ValidatorInterface $validator, TranslatorInterface $translator)
     {
+        $this->denyAccessUnlessGranted('ROLE_CITY_SCHOOLYEAR_DELETE');
         $activity = $this->managerRegistry->getRepository(Active::class)->find($request->get('id'));
 
         if ($activity->getStadt() != $this->getUser()->getStadt()) {
