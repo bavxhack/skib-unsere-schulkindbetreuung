@@ -74,8 +74,8 @@
                                                         {% for block in entry.realZeitblocks %}
                                                             <div>
                                                                 {{ block.wochentagString }} {{ block.von|date('H:i') }}-{{ block.bis|date('H:i') }}
-                                                                ({{ block.ganztagString }})
-                                                                {% if block.translate.blockbeschreibung is not empty %} - {{ block.translate.blockbeschreibung }}{% endif %}
+
+                                                                {% if block.translate.blockbezeichnung is not empty %} - {{ block.translate.blockbezeichnung }}{% endif %}
                                                                 - <strong>zugelassen</strong>
                                                             </div>
                                                         {% else %}
@@ -86,8 +86,8 @@
                                                         {% for block in entry.realBeworben %}
                                                             <div>
                                                                 {{ block.wochentagString }} {{ block.von|date('H:i') }}-{{ block.bis|date('H:i') }}
-                                                                ({{ block.ganztagString }})
-                                                                {% if block.translate.blockbeschreibung is not empty %} - {{ block.translate.blockbeschreibung }}{% endif %}
+
+                                                                {% if block.translate.blockbezeichnung is not empty %} - {{ block.translate.blockbezeichnung }}{% endif %}
                                                                 - <strong>offen</strong>
                                                             </div>
                                                         {% else %}
