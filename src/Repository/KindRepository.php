@@ -163,6 +163,50 @@ class KindRepository extends ServiceEntityRepository
     /**
      * @return Kind[]
      */
+    public function findLatestChildrenForSchuljahr(Active $schuljahr): array
+    {
+        $kinder = $this->createQueryBuilder('k')
+            ->innerJoin('k.eltern', 'eltern')
+            ->leftJoin('k.zeitblocks', 'zeitblock')
+            ->leftJoin('k.beworben', 'beworben')
+            ->leftJoin('k.warteliste', 'warteliste')
+            ->leftJoin('k.movedToWaiting', 'moved_to_waiting')
+            ->andWhere('k.startDate IS NOT NULL')
+            ->andWhere('eltern.created_at IS NOT NULL')
+            ->andWhere('zeitblock.active = :schuljahr OR beworben.active = :schuljahr OR warteliste.active = :schuljahr OR moved_to_waiting.active = :schuljahr')
+            ->setParameter('schuljahr', $schuljahr)
+            ->orderBy('k.startDate', 'ASC')
+            ->addOrderBy('eltern.created_at', 'ASC')
+            ->getQuery()
+            ->getResult();
+
+        $kinderRes = [];
+        foreach ($kinder as $kind) {
+            $tracing = $kind->getTracing();
+            if (!$tracing) {
+                $kinderRes['kind_'.$kind->getId()] = $kind;
+                continue;
+            }
+            $kindTmp = $kinderRes[$tracing] ?? null;
+            if (!$kindTmp) {
+                $kinderRes[$tracing] = $kind;
+                continue;
+            }
+            if ($kindTmp->getStartDate() < $kind->getStartDate()) {
+                $kinderRes[$tracing] = $kind;
+                continue;
+            }
+            if ($kindTmp->getStartDate() == $kind->getStartDate() && $kindTmp->getEltern()->getCreatedAt() < $kind->getEltern()->getCreatedAt()) {
+                $kinderRes[$tracing] = $kind;
+            }
+        }
+
+        return array_values($kinderRes);
+    }
+
+    /**
+     * @return Kind[]
+     */
     public function findKindWithBeworbenZeitblocksForSchuljahr(Organisation $organisation, Active $schuljahr): array
     {
         $subQuery = $this->createQueryBuilder('kind2')

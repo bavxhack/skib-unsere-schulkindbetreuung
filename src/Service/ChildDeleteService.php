@@ -2,11 +2,10 @@
 
 namespace App\Service;
 
-use App\Entity\Active;
+use App\Entity\EmailResponse;
 use App\Entity\Kind;
 use App\Entity\Log;
 use App\Entity\Organisation;
-use App\Entity\Stadt;
 
 use App\Entity\Stammdaten;
 use App\Entity\User;
@@ -60,7 +59,6 @@ class ChildDeleteService
 
     public function deleteChild(Kind $kind, User $user)
     {
-
         try {
             $childHist = $this->em->getRepository(Kind::class)->findHistoryOfThisChild($kind);
             foreach ($childHist as $data){
@@ -86,6 +84,102 @@ class ChildDeleteService
         } catch (\Exception $exception) {
             return false;
         }
+    }
+
+    public function deleteChildWithParentsWithoutNotification(Kind $kind, User $user): bool
+    {
+        try {
+            $stammdaten = $kind->getEltern();
+            $childHist = $this->em->getRepository(Kind::class)->findHistoryOfThisChild($kind);
+            if (sizeof($childHist) === 0) {
+                $childHist = [$kind];
+            }
+            foreach ($childHist as $data) {
+                $this->removeChildRelationsAndEntity($data);
+            }
+            $this->em->flush();
+
+            if ($stammdaten && $this->em->getRepository(Kind::class)->count(['eltern' => $stammdaten]) === 0) {
+                $this->removeStammdatenAndRelations($stammdaten);
+                $this->em->flush();
+            }
+
+            $message = 'child hard deleted (without notification): Tracing' . $kind->getTracing() .
+                'Name: ' . $kind->getVorname().' '.$kind->getNachname() . '; ' .
+                'fos_user_id: ' . $user->getId() . '; ';
+            $log = new Log();
+            $log->setUser($user->getEmail());
+            $log->setDate(new \DateTime());
+            $log->setMessage($message);
+            $this->em->persist($log);
+            $this->em->flush();
+
+            return true;
+        } catch (\Exception $exception) {
+            return false;
+        }
+    }
+
+    private function removeChildRelationsAndEntity(Kind $kind): void
+    {
+        foreach ($kind->getAbwesends()->toArray() as $abwesend) {
+            $this->em->remove($abwesend);
+        }
+        foreach ($kind->getAnwesenheitenSchulkindbetreuung()->toArray() as $anwesenheit) {
+            $this->em->remove($anwesenheit);
+        }
+        foreach ($kind->getZeitblocks()->toArray() as $zeitblock) {
+            $kind->removeZeitblock($zeitblock);
+        }
+        foreach ($kind->getBeworben()->toArray() as $zeitblock) {
+            $kind->removeBeworben($zeitblock);
+            $zeitblock->removeKinderBeworben($kind);
+        }
+        foreach ($kind->getWarteliste()->toArray() as $zeitblock) {
+            $kind->removeWarteliste($zeitblock);
+            $zeitblock->removeWartelisteKinder($kind);
+        }
+        foreach ($kind->getMovedToWaiting()->toArray() as $zeitblock) {
+            $kind->removeMovedToWaiting($zeitblock);
+            $zeitblock->removeMovedToWaitingKid($kind);
+        }
+        foreach ($kind->getRechnungen()->toArray() as $rechnung) {
+            $kind->removeRechnungen($rechnung);
+        }
+
+        $this->em->remove($kind);
+    }
+
+    private function removeStammdatenAndRelations(Stammdaten $stammdaten): void
+    {
+        foreach ($stammdaten->getRechnungs()->toArray() as $rechnung) {
+            foreach ($rechnung->getKinder()->toArray() as $kind) {
+                $rechnung->removeKinder($kind);
+            }
+            foreach ($rechnung->getZeitblocks()->toArray() as $zeitblock) {
+                $rechnung->removeZeitblock($zeitblock);
+                $zeitblock->removeRechnungen($rechnung);
+            }
+            $this->em->remove($rechnung);
+        }
+
+        foreach ($stammdaten->getPaymentFerien()->toArray() as $payment) {
+            foreach ($payment->getRefunds()->toArray() as $refund) {
+                $this->em->remove($refund);
+            }
+            $this->em->remove($payment);
+        }
+
+        foreach ($stammdaten->getKundennummerns()->toArray() as $kundennummer) {
+            $this->em->remove($kundennummer);
+        }
+
+        $emailResponses = $this->em->getRepository(EmailResponse::class)->findBy(['stammdaten' => $stammdaten]);
+        foreach ($emailResponses as $emailResponse) {
+            $this->em->remove($emailResponse);
+        }
+
+        $this->em->remove($stammdaten);
     }
 
     public function sendEmail(Stammdaten $stammdaten, Kind $kind, Organisation $organisation)
