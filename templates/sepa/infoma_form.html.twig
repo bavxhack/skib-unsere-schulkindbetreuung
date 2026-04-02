@@ -1,0 +1,36 @@
+{% extends 'adminBase.html.twig' %}
+
+{% block content %}
+    <section class="dashboard-counts section-padding">
+        <div class="container-fluid">
+            <div class="row">
+                <div class="col-12 card">
+                    <div class="card-header">
+                        <h1>Infoma Export</h1>
+                        <p class="mb-0">SEPA-ID: {{ sepa.id }}</p>
+                    </div>
+                    <div class="card-body">
+                        {{ form_start(form) }}
+                        <div class="row">
+                            <div class="col-md-4">
+                                {{ form_row(form.sachkonto) }}
+                            </div>
+                            <div class="col-md-4">
+                                {{ form_row(form.kostenstelle) }}
+                            </div>
+                            <div class="col-md-4">
+                                {{ form_row(form.kostentraeger) }}
+                            </div>
+                        </div>
+                        <div class="row mt-3">
+                            <div class="col-md-12">
+                                {{ form_row(form.download) }}
+                            </div>
+                        </div>
+                        {{ form_end(form) }}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+{% endblock %}
