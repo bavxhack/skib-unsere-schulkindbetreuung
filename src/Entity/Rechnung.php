@@ -40,6 +40,9 @@ class Rechnung
     #[ORM\ManyToMany(targetEntity: \App\Entity\Kind::class, inversedBy: 'rechnungen')]
     private $kinder;
 
+    #[ORM\OneToMany(targetEntity: RechnungKind::class, mappedBy: 'rechnung', cascade: ['persist'], orphanRemoval: true)]
+    private Collection $rechnungKinds;
+
     #[ORM\Column(type: 'datetime')]
     private $von;
 
@@ -53,6 +56,7 @@ class Rechnung
     {
         $this->zeitblocks = new ArrayCollection();
         $this->kinder = new ArrayCollection();
+        $this->rechnungKinds = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -216,6 +220,35 @@ class Rechnung
     public function setSepaType(?string $sepaType): self
     {
         $this->sepaType = $sepaType;
+
+        return $this;
+    }
+
+    /**
+     * @return Collection|RechnungKind[]
+     */
+    public function getRechnungKinds(): Collection
+    {
+        return $this->rechnungKinds;
+    }
+
+    public function addRechnungKind(RechnungKind $rechnungKind): self
+    {
+        if (!$this->rechnungKinds->contains($rechnungKind)) {
+            $this->rechnungKinds[] = $rechnungKind;
+            $rechnungKind->setRechnung($this);
+        }
+
+        return $this;
+    }
+
+    public function removeRechnungKind(RechnungKind $rechnungKind): self
+    {
+        if ($this->rechnungKinds->removeElement($rechnungKind)) {
+            if ($rechnungKind->getRechnung() === $this) {
+                $rechnungKind->setRechnung(null);
+            }
+        }
 
         return $this;
     }
