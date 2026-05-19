@@ -214,7 +214,7 @@ class FerienManagementController extends AbstractController
 
 
     /**
-     * @Route("/org_ferien/duplicate", name="ferien_management_duplicate", methods={"POST"})
+     * @Route("/org_ferien/duplicate", name="ferien_management_duplicate", methods={"GET","POST"})
      */
     public function duplicate(Request $request, ValidatorInterface $validator, TranslatorInterface $translator)
     {
@@ -224,22 +224,51 @@ class FerienManagementController extends AbstractController
         }
 
         $ferienblock = $this->managerRegistry->getRepository(Ferienblock::class)->findOneBy(array('id' => $request->get('ferien_id'), 'organisation' => $organisation));
-        $ferienblockNew = clone $ferienblock;
-        $translations = $ferienblock->getTranslations();
-        foreach ($translations as $locale => $fields) {
-            $clone = clone $fields;
-            $clone->setTitel('[copy]' . $clone->getTitel());
-            $ferienblockNew->addTranslation($clone);
+        if ($request->isMethod('GET')) {
+            return $this->render('ferien_management/duplicateForm.html.twig', [
+                'block' => $ferienblock,
+                'org' => $organisation,
+            ]);
+        }
 
+        $startDate = \DateTime::createFromFormat('Y-m-d', (string)$request->request->get('start_date'));
+        $endDate = \DateTime::createFromFormat('Y-m-d', (string)$request->request->get('end_date'));
+
+        if (!$startDate || !$endDate) {
+            return new JsonResponse(array('error' => 1, 'snack' => $translator->trans('Bitte Start- und Enddatum angeben.')));
         }
-        foreach ($ferienblock->getKategorie() as $data) {
-            $ferienblockNew->addKategorie($data);
+
+        if ($endDate < $startDate) {
+            return new JsonResponse(array('error' => 1, 'snack' => $translator->trans('Das Enddatum darf nicht vor dem Startdatum liegen.')));
         }
+
+        $periodEnd = (clone $endDate)->modify('+1 day');
+        $period = new \DatePeriod($startDate, new \DateInterval('P1D'), $periodEnd);
         $em = $this->managerRegistry->getManager();
-        $em->persist($ferienblockNew);
+        $copiedCount = 0;
+
+        foreach ($period as $date) {
+            $ferienblockNew = clone $ferienblock;
+            $ferienblockNew->setStartDate(clone $date);
+            $ferienblockNew->setEndDate(clone $date);
+
+            foreach ($ferienblock->getTranslations() as $fields) {
+                $clone = clone $fields;
+                $clone->setTitel('[Kopie] ' . $clone->getTitel());
+                $ferienblockNew->addTranslation($clone);
+            }
+
+            foreach ($ferienblock->getKategorie() as $data) {
+                $ferienblockNew->addKategorie($data);
+            }
+
+            $em->persist($ferienblockNew);
+            $copiedCount++;
+        }
+
         $em->flush();
-        $text = $translator->trans('Erfolgreich kopiert');
-        return new JsonResponse(array('redirect' => $this->generateUrl('ferien_management_edit', array('org_id' => $organisation->getId(), 'ferien_id' => $ferienblockNew->getId(), 'snack' => $text))));
+        $text = $translator->trans('Erfolgreich kopiert (%count% Programme angelegt).', ['%count%' => $copiedCount]);
+        return new JsonResponse(array('error' => 0, 'snack' => $text, 'redirect' => $this->generateUrl('ferien_management_show', array('org_id' => $organisation->getId(), 'snack' => $text))));
 
     }
 

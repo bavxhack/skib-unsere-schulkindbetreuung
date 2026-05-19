@@ -1,0 +1,40 @@
+<div class="modal-header">
+    <h5 class="modal-title">{% trans %}Ferienprogramm duplizieren{% endtrans %}</h5>
+    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+        <span aria-hidden="true">&times;</span>
+    </button>
+</div>
+<div class="modal-body">
+    <form class="ajaxDuplicateFerienForm" action="{{ path('ferien_management_duplicate', {'ferien_id': block.id, 'org_id': org.id}) }}" method="post">
+        <p>{% trans %}Bitte Start- und Enddatum wählen. Für jeden Tag in diesem Zeitraum wird eine Kopie angelegt.{% endtrans %}</p>
+        <div class="form-group">
+            <label for="ferien-duplicate-start">{% trans %}Startdatum{% endtrans %}</label>
+            <input class="form-control" id="ferien-duplicate-start" name="start_date" type="date" required>
+        </div>
+        <div class="form-group">
+            <label for="ferien-duplicate-end">{% trans %}Enddatum{% endtrans %}</label>
+            <input class="form-control" id="ferien-duplicate-end" name="end_date" type="date" required>
+        </div>
+        <button type="submit" class="btn btn-primary">{% trans %}Duplizieren{% endtrans %}</button>
+    </form>
+</div>
+<script>
+    $('.ajaxDuplicateFerienForm').submit(function (e) {
+        e.preventDefault();
+        var $form = $(e.currentTarget);
+
+        $.ajax({
+            url: $form.attr('action'),
+            method: 'POST',
+            data: $form.serialize(),
+            success: function (data) {
+                if (typeof data.snack !== 'undefined') {
+                    $.snackbar({content: data.snack});
+                }
+                if (data.error === 0 && typeof data.redirect !== 'undefined') {
+                    window.location.href = data.redirect;
+                }
+            }
+        });
+    });
+</script>
