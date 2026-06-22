@@ -342,13 +342,84 @@
                                             <div class="tab-pane fade" id="ferienbetreeuung" role="tabpanel" aria-labelledby="tab-ferienbetreeuung-link">
                                                 <div class="section-head">
                                                     <h2>Ferienbetreuung</h2>
-                                                    <p>Der Bereich ist vorbereitet und kann im gleichen Stil erweitert werden.</p>
+                                                    <p>Verwalte Tags für Ferienprogramme und behalte im Blick, wie oft sie bereits verwendet werden.</p>
                                                 </div>
-                                                <div class="config-card empty-state">
-                                                    <div class="empty-state-icon">☀️</div>
-                                                    <h3>Noch keine Inhalte</h3>
-                                                    <p>Hier können später spezielle Einstellungen für die Ferienbetreuung ergänzt werden.</p>
-                                                </div>
+
+                                                {% if stadt.id is not null %}
+                                                    <div class="config-card mb-4">
+                                                        <div class="card-title">Neuen Tag anlegen</div>
+                                                        <div class="row g-3 align-items-end">
+                                                            <div class="col-lg-8">
+                                                                <label for="ferien-tag-new-name" class="form-label">Name des Tags</label>
+                                                                <input id="ferien-tag-new-name" class="form-control" type="text" name="name" form="ferien-tag-add-form" placeholder="z. B. Sport, Kreativ, Ganztags">
+                                                            </div>
+                                                            <div class="col-lg-4">
+                                                                <button type="submit" class="btn btn-primary w-100" form="ferien-tag-add-form">
+                                                                    <i class="fa fa-plus"></i> Tag hinzufügen
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div class="config-card">
+                                                        <div class="d-flex flex-column flex-md-row justify-content-between gap-2 mb-3">
+                                                            <div>
+                                                                <div class="card-title mb-1">Vorhandene Tags</div>
+                                                                <p class="text-muted mb-0">Die Anzahl zeigt, wie viele Ferienprogramme dieser Stadt dem Tag zugeordnet sind.</p>
+                                                            </div>
+                                                            <span class="badge badge-light align-self-md-start">{{ ferienTags|length }} Tags</span>
+                                                        </div>
+
+                                                        {% if ferienTags|length > 0 %}
+                                                            <div class="table-responsive">
+                                                                <table class="table align-middle mb-0">
+                                                                    <thead>
+                                                                        <tr>
+                                                                            <th>Name</th>
+                                                                            <th class="text-center">Zugeordnete Ferienprogramme</th>
+                                                                            <th class="text-right">Aktionen</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        {% for row in ferienTags %}
+                                                                            {% set tag = row.tag %}
+                                                                            <tr>
+                                                                                <td style="min-width: 260px;">
+                                                                                    <input class="form-control" type="text" name="name" value="{{ tag.name }}" form="ferien-tag-edit-form-{{ tag.id }}">
+                                                                                </td>
+                                                                                <td class="text-center">
+                                                                                    <span class="badge badge-primary badge-pill">{{ row.ferienCount }}</span>
+                                                                                </td>
+                                                                                <td class="text-right">
+                                                                                    <div class="btn-group" role="group" aria-label="Tag-Aktionen">
+                                                                                        <button type="submit" class="btn btn-outline-primary btn-sm" form="ferien-tag-edit-form-{{ tag.id }}">
+                                                                                            <i class="fa fa-save"></i> Speichern
+                                                                                        </button>
+                                                                                        <button type="submit" class="btn btn-outline-danger btn-sm" form="ferien-tag-delete-form-{{ tag.id }}" onclick="return confirm('Diesen Tag wirklich löschen? Die Zuordnung zu Ferienprogrammen wird entfernt.');">
+                                                                                            <i class="fa fa-trash"></i> Löschen
+                                                                                        </button>
+                                                                                    </div>
+                                                                                </td>
+                                                                            </tr>
+                                                                        {% endfor %}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        {% else %}
+                                                            <div class="empty-state">
+                                                                <div class="empty-state-icon">🏷️</div>
+                                                                <h3>Noch keine Tags angelegt</h3>
+                                                                <p>Lege den ersten Tag an, damit Ferienprogramme kategorisiert werden können.</p>
+                                                            </div>
+                                                        {% endif %}
+                                                    </div>
+                                                {% else %}
+                                                    <div class="config-card empty-state">
+                                                        <div class="empty-state-icon">☀️</div>
+                                                        <h3>Tags nach dem Speichern verfügbar</h3>
+                                                        <p>Speichere die Stadt zunächst, um Tags für Ferienprogramme verwalten zu können.</p>
+                                                    </div>
+                                                {% endif %}
                                             </div>
 
                                             <div class="tab-pane fade" id="emails" role="tabpanel" aria-labelledby="tab-emails-link">
@@ -515,6 +586,23 @@
 
                                     {{ form_widget(form) }}
                                     {{ form_end(form) }}
+
+                                    {% if stadt is defined and stadt.id is not null %}
+                                        <form id="ferien-tag-add-form" method="post" action="{{ path('admin_stadt_ferien_tag_add') }}">
+                                            <input type="hidden" name="stadt_id" value="{{ stadt.id }}">
+                                        </form>
+                                        {% for row in ferienTags %}
+                                            {% set tag = row.tag %}
+                                            <form id="ferien-tag-edit-form-{{ tag.id }}" method="post" action="{{ path('admin_stadt_ferien_tag_edit') }}">
+                                                <input type="hidden" name="stadt_id" value="{{ stadt.id }}">
+                                                <input type="hidden" name="tag_id" value="{{ tag.id }}">
+                                            </form>
+                                            <form id="ferien-tag-delete-form-{{ tag.id }}" method="post" action="{{ path('admin_stadt_ferien_tag_delete') }}">
+                                                <input type="hidden" name="stadt_id" value="{{ stadt.id }}">
+                                                <input type="hidden" name="tag_id" value="{{ tag.id }}">
+                                            </form>
+                                        {% endfor %}
+                                    {% endif %}
 
                                     {% if stadt is defined and stadt.id is not null %}
                                         <div class="upload-section border-top px-4 py-4">
