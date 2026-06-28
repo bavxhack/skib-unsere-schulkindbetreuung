@@ -17,6 +17,8 @@ use App\Entity\Zeitblock;
 use League\Flysystem\FilesystemOperator;
 use Qipsius\TCPDFBundle\Controller\TCPDFController;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
+use Symfony\Component\Routing\RouterInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
 use Twig\Environment;
 
@@ -46,7 +48,8 @@ class AnmeldeEmailService
         IcsService                         $icsService,
         Environment                        $templating,
         MailerService                      $mailer,
-        private LoerrachWorkflowController $loerrachWorkflowController)
+        private LoerrachWorkflowController $loerrachWorkflowController,
+        private RouterInterface            $router)
     {
         $this->print = $print;
         $this->tcpdf = $tcpdf;
@@ -134,7 +137,13 @@ class AnmeldeEmailService
                 $this->translator->setLocale($adresse->getLanguage());
             }
             $this->betreff = $this->translator->trans('Buchungsbestätigung der Schulkindbetreuung für ') . $kind->getVorname() ;
-            $this->content = $this->templating->render('email/anmeldebestatigung.html.twig', array('eltern' => $adresse, 'kind' => $kind, 'stadt' => $stadt, 'text' => $text));
+            $this->content = $this->templating->render('email/anmeldebestatigung.html.twig', array(
+                'eltern' => $adresse,
+                'kind' => $kind,
+                'stadt' => $stadt,
+                'text' => $text,
+                'parentSickRequestUrl' => $this->getParentSickRequestUrl($stadt),
+            ));
             $this->translator->setLocale($sessionLocale);
             return true;
         } else {// es gibt noch beworbene Zeitblöcke
@@ -155,12 +164,31 @@ class AnmeldeEmailService
                     return $a->getVon() <=> $b->getVon();
                 });
 
-                $this->content = $this->templating->render('email/anmeldebestatigungBeworben.html.twig', array('eltern' => $adresse, 'kind' => $kind, 'stadt' => $stadt,'blocks' => $blocks));
+                $this->content = $this->templating->render('email/anmeldebestatigungBeworben.html.twig', array(
+                    'eltern' => $adresse,
+                    'kind' => $kind,
+                    'stadt' => $stadt,
+                    'blocks' => $blocks,
+                    'parentSickRequestUrl' => $this->getParentSickRequestUrl($stadt),
+                ));
                 $this->translator->setLocale($sessionLocale);
                 return true;
             }
         }
         return false;
+    }
+
+    private function getParentSickRequestUrl(Stadt $stadt): ?string
+    {
+        if (!$stadt->isParentSickReportsEnabled()) {
+            return null;
+        }
+
+        return $this->router->generate(
+            'parent_sick_request',
+            ['stadtSlug' => $stadt->getSlug()],
+            UrlGeneratorInterface::ABSOLUTE_URL
+        );
     }
 
     /**
