@@ -336,6 +336,9 @@ class Stadt implements TranslatableInterface
     #[ORM\Column(nullable: true)]
     private ?bool $skip_setting_show_chronicalDeseas = null;
 
+    #[ORM\Column(options: ['default' => false])]
+    private ?bool $parentSickReportsEnabled = false;
+
 
 
 
@@ -1582,6 +1585,18 @@ class Stadt implements TranslatableInterface
     public function setSettingsDokumentUploadEnable(bool $settingsDokumentUploadEnable): self
     {
         $this->settingsDokumentUploadEnable = $settingsDokumentUploadEnable;
+
+        return $this;
+    }
+
+    public function isParentSickReportsEnabled(): ?bool
+    {
+        return $this->parentSickReportsEnabled;
+    }
+
+    public function setParentSickReportsEnabled(?bool $parentSickReportsEnabled): self
+    {
+        $this->parentSickReportsEnabled = $parentSickReportsEnabled;
 
         return $this;
     }
