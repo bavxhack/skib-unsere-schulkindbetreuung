@@ -7,12 +7,13 @@ use App\Entity\Sepa;
 use App\Service\PrintRechnungService;
 use App\Service\SepaCreateService;
 use App\Service\SepaExcel;
-use phpDocumentor\Reflection\Types\This;
+use App\Service\InfomaExportService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 
 class SepaDetailController extends AbstractController
 {
@@ -81,5 +82,34 @@ class SepaDetailController extends AbstractController
             throw new \Exception('Wrong Organisation');
         }
         return $this->file($sepaExcel->generateExcel($sepa),'SEPA_ID'.$sepa->getId().'.xlsx', ResponseHeaderBag::DISPOSITION_INLINE);
+    }
+
+    #[Route('/org_accounting/print/infoma', name: 'accounting_sepa_print_infoma', methods: ['POST'])]
+    public function printInfoma(Request $request, InfomaExportService $exportService): Response
+    {
+        $this->denyAccessUnlessGranted('ROLE_ORG_INFOMA_EXPORT');
+
+        $sepa = $this->managerRegistry->getRepository(Sepa::class)->find($request->request->getInt('sepa_id'));
+        if (!$sepa || $sepa->getOrganisation() !== $this->getUser()->getOrganisation()) {
+            throw $this->createNotFoundException();
+        }
+        if (!$this->isCsrfTokenValid('infoma-export-'.$sepa->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Ungültiges CSRF-Token.');
+        }
+
+        $account = trim((string) $request->request->get('account'));
+        $counterAccount = trim((string) $request->request->get('counter_account'));
+        if (!preg_match('/^[A-Za-z0-9.-]+$/', $account) || !preg_match('/^[A-Za-z0-9.-]+$/', $counterAccount)) {
+            throw new BadRequestHttpException('Bitte geben Sie gültige Konten an.');
+        }
+
+        $response = new Response($exportService->generate($sepa, $account, $counterAccount));
+        $response->headers->set('Content-Type', 'text/csv; charset=UTF-8');
+        $response->headers->set('Content-Disposition', $response->headers->makeDisposition(
+            ResponseHeaderBag::DISPOSITION_ATTACHMENT,
+            'INFOMA_SEPA_ID'.$sepa->getId().'.csv',
+        ));
+
+        return $response;
     }
 }
