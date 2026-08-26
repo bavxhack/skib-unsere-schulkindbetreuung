@@ -7,12 +7,13 @@ use App\Entity\Sepa;
 use App\Service\PrintRechnungService;
 use App\Service\SepaCreateService;
 use App\Service\SepaExcel;
-use phpDocumentor\Reflection\Types\This;
+use App\Service\InfomaExportService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 class SepaDetailController extends AbstractController
 {
@@ -81,5 +82,33 @@ class SepaDetailController extends AbstractController
             throw new \Exception('Wrong Organisation');
         }
         return $this->file($sepaExcel->generateExcel($sepa),'SEPA_ID'.$sepa->getId().'.xlsx', ResponseHeaderBag::DISPOSITION_INLINE);
+    }
+
+    #[Route('/org_accounting/print/infoma/{id}', name: 'accounting_sepa_print_infoma', methods: ['POST'])]
+    #[IsGranted('ROLE_ORG_INFOMA_EXPORT')]
+    public function printInfoma(Request $request, Sepa $sepa, InfomaExportService $exportService): Response
+    {
+        if ($sepa->getOrganisation() !== $this->getUser()->getOrganisation()) {
+            throw $this->createAccessDeniedException();
+        }
+        if (!$this->isCsrfTokenValid('infoma-export-'.$sepa->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Ungültiges CSRF-Token.');
+        }
+
+        $kostenstelle = trim((string) $request->request->get('kostenstelle'));
+        $gegenkonto = trim((string) $request->request->get('gegenkonto'));
+        if ($kostenstelle === '' || $gegenkonto === '') {
+            $this->addFlash('danger', 'Kostenstelle und Gegenkonto müssen angegeben werden.');
+            return $this->redirectToRoute('accounting_overview');
+        }
+
+        $response = new Response($exportService->generate($sepa, $kostenstelle, $gegenkonto));
+        $response->headers->set('Content-Type', 'text/csv; charset=UTF-8');
+        $response->headers->set('Content-Disposition', $response->headers->makeDisposition(
+            ResponseHeaderBag::DISPOSITION_ATTACHMENT,
+            sprintf('INFOMA_SEPA_ID%d.csv', $sepa->getId())
+        ));
+
+        return $response;
     }
 }
