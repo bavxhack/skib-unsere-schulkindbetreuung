@@ -44,7 +44,7 @@ final class InfomaExportServiceTest extends TestCase
             ->setBruttoSumme(80.0)
             ->setRabatt(10.0));
         $invoice->addKinderRechnung((new KinderRechnung())
-            ->setKind((new Kind())->setVorname('Ben')->setNachname('Mustermann'))
+            ->setKind((new Kind())->setVorname('BenjaminMitEinemSehrLangenVornamen')->setNachname('Mustermann'))
             ->setSumme(49.0)
             ->setBruttoSumme(49.0)
             ->setRabatt(0.0));
@@ -80,7 +80,7 @@ final class InfomaExportServiceTest extends TestCase
         self::assertSame('SEPA-LS', $firstBooking[39]);
         self::assertSame('COBADEFFXXX', $firstBooking[64]);
         self::assertSame('DE89370400440532013000', $firstBooking[65]);
-        self::assertSame('skb-MANDAT-0001', $firstBooking[66]);
+        self::assertSame('Anna Mustermann', $firstBooking[66]);
         self::assertSame('01.01.2024', $firstBooking[67]);
         self::assertSame('DE', $firstBooking[68]);
         self::assertSame('18.06.2026', $firstBooking[69]);
@@ -93,7 +93,49 @@ final class InfomaExportServiceTest extends TestCase
         self::assertSame('20000', $secondBooking[1]);
         self::assertNotSame($firstBooking[4], $secondBooking[4]);
         self::assertSame('49,00', $secondBooking[14]);
+        self::assertSame('BenjaminMitEinemSehrLangenVorna', $secondBooking[66]);
+        self::assertSame(31, mb_strlen($secondBooking[66]));
         self::assertSame('-49,00', $secondCounterBooking[10]);
+    }
+
+    public function testItExportsLegacyInvoicesAsParentEntriesWithAnExplicitMandatePrefix(): void
+    {
+        $organisation = new Organisation();
+        $sepa = (new Sepa())
+            ->setOrganisation($organisation)
+            ->setCreatedAt(new \DateTimeImmutable('2026-06-11 09:00:00'))
+            ->setEinzugsDatum(new \DateTimeImmutable('2026-06-18'));
+        $masterData = (new Stammdaten())
+            ->setVorname('Erika')
+            ->setName('Beispiel')
+            ->setKontoinhaber('Erika Beispiel')
+            ->setIban('DE89370400440532013000')
+            ->setBic('COBADEFFXXX')
+            ->setCreatedAt(new \DateTimeImmutable('2024-01-01'));
+        $customerNumber = (new Kundennummern())->setKundennummer('D10002');
+        $organisation->addKundennummern($customerNumber);
+        $masterData->addKundennummern($customerNumber);
+        $invoice = (new Rechnung())
+            ->setStammdaten($masterData)
+            ->setCreatedAt(new \DateTimeImmutable('2026-06-11'))
+            ->setSumme(119.0);
+        $sepa->addRechnungen($invoice);
+
+        $lines = explode("\n", rtrim((new InfomaExportService())->generate(
+            $sepa,
+            '400000',
+            '120000',
+            'EXTSYS',
+            'SEPA-LS',
+        ), "\n"));
+
+        self::assertCount(5, $lines);
+        $booking = explode('|', $lines[3]);
+        $counterBooking = explode('|', $lines[4]);
+        self::assertSame('119,00', $booking[14]);
+        self::assertSame('Eltern Altbestand: Erika Beispiel', $booking[15]);
+        self::assertSame('ELT-Erika Beispiel', $booking[66]);
+        self::assertSame('-119,00', $counterBooking[10]);
     }
 
     public function testItRejectsCharactersThatWouldBreakTheFileFormat(): void

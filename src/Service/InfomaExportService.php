@@ -3,7 +3,6 @@
 namespace App\Service;
 
 use App\Entity\Kind;
-use App\Entity\KinderRechnung;
 use App\Entity\Rechnung;
 use App\Entity\Sepa;
 
@@ -43,37 +42,42 @@ final class InfomaExportService
         $sequence = 1;
         $bookingCount = 0;
         foreach ($sepa->getRechnungen() as $invoice) {
-            foreach ($invoice->getKinderRechnungen() as $childInvoice) {
-                $child = $childInvoice->getKind();
-                $amount = $childInvoice->getSumme();
-                if (!$child) {
-                    throw new \InvalidArgumentException('Eine Kinderrechnung ist keinem Kind zugeordnet.');
+            if (!$invoice->getKinderRechnungen()->isEmpty()) {
+                foreach ($invoice->getKinderRechnungen() as $childInvoice) {
+                    $child = $childInvoice->getKind();
+                    if (!$child) {
+                        throw new \InvalidArgumentException('Eine Kinderrechnung ist keinem Kind zugeordnet.');
+                    }
+                    $this->appendBooking(
+                        $lines,
+                        $sepa,
+                        $invoice,
+                        $child,
+                        $childInvoice->getSumme(),
+                        $this->mandateReferenceForChild($child),
+                        $sequence,
+                        $paymentMethodCode,
+                        $revenueAccount,
+                    );
+                    ++$sequence;
+                    ++$bookingCount;
                 }
-                if (!is_finite($amount) || $amount <= 0) {
-                    throw new \InvalidArgumentException('Der Infoma-Betrag muss für jedes Kind größer als 0,00 sein.');
-                }
-
-                $lineNumber = (string) ($sequence * 10000);
-                $externalDocumentNumber = $this->externalDocumentNumber($sepa, $invoice, $child, $sequence);
-                $lines[] = $this->fibuRecord(
-                    $sepa,
-                    $invoice,
-                    $childInvoice,
-                    $amount,
-                    $lineNumber,
-                    $externalDocumentNumber,
-                    $paymentMethodCode,
-                );
-                $lines[] = $this->counterRecord(
-                    $childInvoice,
-                    $amount,
-                    $lineNumber,
-                    $externalDocumentNumber,
-                    $revenueAccount,
-                );
-                ++$sequence;
-                ++$bookingCount;
+                continue;
             }
+
+            $this->appendBooking(
+                $lines,
+                $sepa,
+                $invoice,
+                null,
+                (float) $invoice->getSumme(),
+                $this->legacyMandateReference($invoice),
+                $sequence,
+                $paymentMethodCode,
+                $revenueAccount,
+            );
+            ++$sequence;
+            ++$bookingCount;
         }
         if ($bookingCount === 0) {
             throw new \InvalidArgumentException('Der Infoma-Export enthält keine Kinderbuchungen.');
@@ -82,19 +86,53 @@ final class InfomaExportService
         return implode("\n", $lines)."\n";
     }
 
+    /** @param list<string> $lines */
+    private function appendBooking(
+        array &$lines,
+        Sepa $sepa,
+        Rechnung $invoice,
+        ?Kind $child,
+        float $amount,
+        string $mandateReference,
+        int $sequence,
+        string $paymentMethodCode,
+        string $revenueAccount,
+    ): void {
+        if (!is_finite($amount) || $amount <= 0) {
+            throw new \InvalidArgumentException('Der Infoma-Betrag muss größer als 0,00 sein.');
+        }
+
+        $lineNumber = (string) ($sequence * 10000);
+        $externalDocumentNumber = $this->externalDocumentNumber($sepa, $invoice, $child, $sequence);
+        $lines[] = $this->fibuRecord(
+            $sepa,
+            $invoice,
+            $child,
+            $amount,
+            $mandateReference,
+            $lineNumber,
+            $externalDocumentNumber,
+            $paymentMethodCode,
+        );
+        $lines[] = $this->counterRecord(
+            $child,
+            $amount,
+            $lineNumber,
+            $externalDocumentNumber,
+            $revenueAccount,
+        );
+    }
+
     private function fibuRecord(
         Sepa $sepa,
         Rechnung $invoice,
-        KinderRechnung $childInvoice,
+        ?Kind $child,
         float $amount,
+        string $mandateReference,
         string $lineNumber,
         string $externalDocumentNumber,
         string $paymentMethodCode,
     ): string {
-        $child = $childInvoice->getKind();
-        if (!$child) {
-            throw new \LogicException('Eine Kinderrechnung ist keinem Kind zugeordnet.');
-        }
         $masterData = $invoice->getStammdaten();
         $bookingDate = $invoice->getCreatedAt() ?? $sepa->getCreatedAt();
         $dueDate = $sepa->getEinzugsDatum();
@@ -103,11 +141,8 @@ final class InfomaExportService
         }
 
         $iban = strtoupper((string) preg_replace('/\s+/', '', (string) $masterData->getIban()));
-        $confirmationCode = (string) $masterData->getConfirmationCode();
-        $this->assertValue($confirmationCode, 'Mandatsreferenz', 31);
-        $mandateReference = 'skb-'.$confirmationCode;
         $mandateDate = $masterData->getCreatedAt();
-        if ($mandateReference !== 'skb-' && ($iban === '' || !$mandateDate)) {
+        if ($iban === '' || !$mandateDate) {
             throw new \InvalidArgumentException('IBAN und Unterschriftsdatum sind bei einer Mandatsreferenz erforderlich.');
         }
 
@@ -140,30 +175,35 @@ final class InfomaExportService
     }
 
     private function counterRecord(
-        KinderRechnung $childInvoice,
+        ?Kind $child,
         float $amount,
         string $lineNumber,
         string $externalDocumentNumber,
         string $revenueAccount,
     ): string {
-        $child = $childInvoice->getKind();
-        if (!$child) {
-            throw new \LogicException('Eine Kinderrechnung ist keinem Kind zugeordnet.');
-        }
+        $description = $child
+            ? 'Erlös Gegenkonto '.$child->getVorname().' '.$child->getNachname()
+            : 'Erlös Gegenkonto Eltern Altbestand';
         return $this->record(self::COUNTER_FIELD_COUNT, [
             1 => '2', 2 => $lineNumber, 3 => '1', 5 => $externalDocumentNumber,
             6 => '0', 7 => $revenueAccount, 8 => '0', 11 => $this->amount(-$amount),
-            12 => $this->limit('Erlös Gegenkonto '.$child->getVorname().' '.$child->getNachname(), 50),
+            12 => $this->limit($description, 50),
         ]);
     }
 
-    private function externalDocumentNumber(Sepa $sepa, Rechnung $invoice, Kind $child, int $sequence): string
+    private function externalDocumentNumber(Sepa $sepa, Rechnung $invoice, ?Kind $child, int $sequence): string
     {
-        return sprintf('EXT-%s-%s-%s', $sepa->getId() ?? 0, $invoice->getId() ?? 0, $child->getId() ?? $sequence);
+        $entryId = $child?->getId() ?? $sequence;
+
+        return sprintf('EXT-%s-%s-%s', $sepa->getId() ?? 0, $invoice->getId() ?? 0, $entryId);
     }
 
-    private function bookingText(Kind $child, ?string $parentFirstName, ?string $parentLastName): string
+    private function bookingText(?Kind $child, ?string $parentFirstName, ?string $parentLastName): string
     {
+        if (!$child) {
+            return $this->limit(sprintf('Eltern Altbestand: %s %s', $parentFirstName, $parentLastName), 50);
+        }
+
         return $this->limit(sprintf(
             'Kind: %s %s; Eltern: %s %s',
             $child->getVorname(),
@@ -171,6 +211,23 @@ final class InfomaExportService
             $parentFirstName,
             $parentLastName,
         ), 50);
+    }
+
+    private function mandateReferenceForChild(Kind $child): string
+    {
+        $reference = $this->limit(trim($child->getVorname().' '.$child->getNachname()), 31);
+        $this->assertValue($reference, 'Mandatsreferenz des Kindes', 31);
+
+        return $reference;
+    }
+
+    private function legacyMandateReference(Rechnung $invoice): string
+    {
+        $masterData = $invoice->getStammdaten();
+        $reference = $this->limit('ELT-'.trim($masterData->getVorname().' '.$masterData->getName()), 31);
+        $this->assertValue($reference, 'Mandatsreferenz des Altbestands', 31);
+
+        return $reference;
     }
 
     private function amount(float $amount): string
