@@ -41,6 +41,9 @@ final class InfomaExportService
 
         $sequence = 1;
         foreach ($sepa->getRechnungen() as $invoice) {
+            if (!$this->hasCompleteSepaDetails($invoice)) {
+                continue;
+            }
             if (!$invoice->getKinderRechnungen()->isEmpty()) {
                 foreach ($invoice->getKinderRechnungen() as $childInvoice) {
                     $child = $childInvoice->getKind();
@@ -248,6 +251,15 @@ final class InfomaExportService
     private function isZeroAmount(float $amount): bool
     {
         return round($amount, 2) === 0.0;
+    }
+
+    private function hasCompleteSepaDetails(Rechnung $invoice): bool
+    {
+        $masterData = $invoice->getStammdaten();
+
+        return $masterData?->getSepaInfo() === true
+            && trim((string) $masterData->getIban()) !== ''
+            && trim((string) $masterData->getBic()) !== '';
     }
 
     /** @param array<int, scalar|null> $assignments */

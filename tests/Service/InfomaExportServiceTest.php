@@ -24,6 +24,7 @@ final class InfomaExportServiceTest extends TestCase
         $masterData = (new Stammdaten())
             ->setVorname('Max')
             ->setName('Mustermann')
+            ->setSepaInfo(true)
             ->setKontoinhaber('Max Mustermann')
             ->setIban('DE89370400440532013000')
             ->setBic('COBADEFFXXX')
@@ -114,6 +115,7 @@ final class InfomaExportServiceTest extends TestCase
         $masterData = (new Stammdaten())
             ->setVorname('Erika')
             ->setName('Beispiel')
+            ->setSepaInfo(true)
             ->setKontoinhaber('Erika Beispiel')
             ->setIban('DE89370400440532013000')
             ->setBic('COBADEFFXXX')
@@ -161,6 +163,45 @@ final class InfomaExportServiceTest extends TestCase
             ->setCreatedAt(new \DateTimeImmutable('2026-06-11'))
             ->setEinzugsDatum(new \DateTimeImmutable('2026-06-18'));
         $sepa->addRechnungen((new Rechnung())->setSumme(0.004));
+
+        $lines = explode("\n", rtrim((new InfomaExportService())->generate(
+            $sepa,
+            '400000',
+            '120000',
+            'EXTSYS',
+            'SEPA-LS',
+        ), "\n"));
+
+        self::assertCount(3, $lines);
+    }
+
+    public function testItOmitsInvoicesWithoutCompleteSepaDetails(): void
+    {
+        $sepa = (new Sepa())
+            ->setOrganisation(new Organisation())
+            ->setCreatedAt(new \DateTimeImmutable('2026-06-11'))
+            ->setEinzugsDatum(new \DateTimeImmutable('2026-06-18'));
+
+        $missingConsent = (new Stammdaten())
+            ->setSepaInfo(false)
+            ->setIban('DE89370400440532013000')
+            ->setBic('COBADEFFXXX');
+        $missingIban = (new Stammdaten())
+            ->setSepaInfo(true)
+            ->setIban('')
+            ->setBic('COBADEFFXXX');
+        $missingBic = (new Stammdaten())
+            ->setSepaInfo(true)
+            ->setIban('DE89370400440532013000')
+            ->setBic('');
+
+        foreach ([$missingConsent, $missingIban, $missingBic] as $masterData) {
+            $invoice = (new Rechnung())->setStammdaten($masterData)->setSumme(10.0);
+            $invoice->addKinderRechnung((new KinderRechnung())
+                ->setKind((new Kind())->setVorname('Test')->setNachname('Kind'))
+                ->setSumme(10.0));
+            $sepa->addRechnungen($invoice);
+        }
 
         $lines = explode("\n", rtrim((new InfomaExportService())->generate(
             $sepa,
