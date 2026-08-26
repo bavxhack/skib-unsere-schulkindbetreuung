@@ -40,7 +40,6 @@ final class InfomaExportService
         ];
 
         $sequence = 1;
-        $bookingCount = 0;
         foreach ($sepa->getRechnungen() as $invoice) {
             if (!$invoice->getKinderRechnungen()->isEmpty()) {
                 foreach ($invoice->getKinderRechnungen() as $childInvoice) {
@@ -48,7 +47,10 @@ final class InfomaExportService
                     if (!$child) {
                         throw new \InvalidArgumentException('Eine Kinderrechnung ist keinem Kind zugeordnet.');
                     }
-                    $this->appendBooking(
+                    if ($this->isZeroAmount($childInvoice->getSumme())) {
+                        continue;
+                    }
+                    $added = $this->appendBooking(
                         $lines,
                         $sepa,
                         $invoice,
@@ -59,13 +61,18 @@ final class InfomaExportService
                         $paymentMethodCode,
                         $revenueAccount,
                     );
-                    ++$sequence;
-                    ++$bookingCount;
+                    if ($added) {
+                        ++$sequence;
+                    }
                 }
                 continue;
             }
 
-            $this->appendBooking(
+            if ($this->isZeroAmount((float) $invoice->getSumme())) {
+                continue;
+            }
+
+            $added = $this->appendBooking(
                 $lines,
                 $sepa,
                 $invoice,
@@ -76,11 +83,9 @@ final class InfomaExportService
                 $paymentMethodCode,
                 $revenueAccount,
             );
-            ++$sequence;
-            ++$bookingCount;
-        }
-        if ($bookingCount === 0) {
-            throw new \InvalidArgumentException('Der Infoma-Export enthält keine Kinderbuchungen.');
+            if ($added) {
+                ++$sequence;
+            }
         }
 
         return implode("\n", $lines)."\n";
@@ -97,9 +102,12 @@ final class InfomaExportService
         int $sequence,
         string $paymentMethodCode,
         string $revenueAccount,
-    ): void {
-        if (!is_finite($amount) || $amount <= 0) {
-            throw new \InvalidArgumentException('Der Infoma-Betrag muss größer als 0,00 sein.');
+    ): bool {
+        if (!is_finite($amount) || $amount < 0) {
+            throw new \InvalidArgumentException('Der Infoma-Betrag darf nicht negativ sein.');
+        }
+        if (round($amount, 2) === 0.0) {
+            return false;
         }
 
         $lineNumber = (string) ($sequence * 10000);
@@ -121,6 +129,8 @@ final class InfomaExportService
             $externalDocumentNumber,
             $revenueAccount,
         );
+
+        return true;
     }
 
     private function fibuRecord(
@@ -233,6 +243,11 @@ final class InfomaExportService
     private function amount(float $amount): string
     {
         return number_format($amount, 2, ',', '');
+    }
+
+    private function isZeroAmount(float $amount): bool
+    {
+        return round($amount, 2) === 0.0;
     }
 
     /** @param array<int, scalar|null> $assignments */

@@ -48,6 +48,11 @@ final class InfomaExportServiceTest extends TestCase
             ->setSumme(49.0)
             ->setBruttoSumme(49.0)
             ->setRabatt(0.0));
+        $invoice->addKinderRechnung((new KinderRechnung())
+            ->setKind((new Kind())->setVorname('Kostenlos')->setNachname('Mustermann'))
+            ->setSumme(0.0)
+            ->setBruttoSumme(0.0)
+            ->setRabatt(0.0));
         $sepa->addRechnungen($invoice);
 
         $csv = (new InfomaExportService())->generate(
@@ -96,6 +101,7 @@ final class InfomaExportServiceTest extends TestCase
         self::assertSame('BenjaminMitEinemSehrLangenVorna', $secondBooking[66]);
         self::assertSame(31, mb_strlen($secondBooking[66]));
         self::assertSame('-49,00', $secondCounterBooking[10]);
+        self::assertStringNotContainsString('Kostenlos Mustermann', $csv);
     }
 
     public function testItExportsLegacyInvoicesAsParentEntriesWithAnExplicitMandatePrefix(): void
@@ -146,6 +152,25 @@ final class InfomaExportServiceTest extends TestCase
             ->setEinzugsDatum(new \DateTimeImmutable('2026-06-18'));
         $this->expectException(\InvalidArgumentException::class);
         (new InfomaExportService())->generate($sepa, '40|0000', '120000', 'EXTSYS', 'SEPA-LS');
+    }
+
+    public function testItOmitsLegacyInvoicesWhoseRoundedAmountIsZero(): void
+    {
+        $sepa = (new Sepa())
+            ->setOrganisation(new Organisation())
+            ->setCreatedAt(new \DateTimeImmutable('2026-06-11'))
+            ->setEinzugsDatum(new \DateTimeImmutable('2026-06-18'));
+        $sepa->addRechnungen((new Rechnung())->setSumme(0.004));
+
+        $lines = explode("\n", rtrim((new InfomaExportService())->generate(
+            $sepa,
+            '400000',
+            '120000',
+            'EXTSYS',
+            'SEPA-LS',
+        ), "\n"));
+
+        self::assertCount(3, $lines);
     }
 
     private function parseAmount(string $amount): float
