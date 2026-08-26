@@ -3,6 +3,7 @@
 namespace App\Service;
 
 use App\Entity\Kind;
+use App\Entity\KinderRechnung;
 use App\Entity\Rechnung;
 use App\Entity\Sepa;
 
@@ -10,10 +11,6 @@ final class InfomaExportService
 {
     private const FIBU_FIELD_COUNT = 70;
     private const COUNTER_FIELD_COUNT = 12;
-
-    public function __construct(private readonly BerechnungsService $calculationService)
-    {
-    }
 
     public function generate(
         Sepa $sepa,
@@ -46,13 +43,12 @@ final class InfomaExportService
         $sequence = 1;
         $bookingCount = 0;
         foreach ($sepa->getRechnungen() as $invoice) {
-            foreach ($invoice->getKinder() as $child) {
-                $calculationDate = $invoice->getVon() ?? $sepa->getVon();
-                $amount = $this->calculationService->getPreisforBetreuung(
-                    $child,
-                    false,
-                    $calculationDate ? \DateTime::createFromInterface($calculationDate) : null,
-                );
+            foreach ($invoice->getKinderRechnungen() as $childInvoice) {
+                $child = $childInvoice->getKind();
+                $amount = $childInvoice->getSumme();
+                if (!$child) {
+                    throw new \InvalidArgumentException('Eine Kinderrechnung ist keinem Kind zugeordnet.');
+                }
                 if (!is_finite($amount) || $amount <= 0) {
                     throw new \InvalidArgumentException('Der Infoma-Betrag muss für jedes Kind größer als 0,00 sein.');
                 }
@@ -62,14 +58,14 @@ final class InfomaExportService
                 $lines[] = $this->fibuRecord(
                     $sepa,
                     $invoice,
-                    $child,
+                    $childInvoice,
                     $amount,
                     $lineNumber,
                     $externalDocumentNumber,
                     $paymentMethodCode,
                 );
                 $lines[] = $this->counterRecord(
-                    $child,
+                    $childInvoice,
                     $amount,
                     $lineNumber,
                     $externalDocumentNumber,
@@ -89,12 +85,16 @@ final class InfomaExportService
     private function fibuRecord(
         Sepa $sepa,
         Rechnung $invoice,
-        Kind $child,
+        KinderRechnung $childInvoice,
         float $amount,
         string $lineNumber,
         string $externalDocumentNumber,
         string $paymentMethodCode,
     ): string {
+        $child = $childInvoice->getKind();
+        if (!$child) {
+            throw new \LogicException('Eine Kinderrechnung ist keinem Kind zugeordnet.');
+        }
         $masterData = $invoice->getStammdaten();
         $bookingDate = $invoice->getCreatedAt() ?? $sepa->getCreatedAt();
         $dueDate = $sepa->getEinzugsDatum();
@@ -140,12 +140,16 @@ final class InfomaExportService
     }
 
     private function counterRecord(
-        Kind $child,
+        KinderRechnung $childInvoice,
         float $amount,
         string $lineNumber,
         string $externalDocumentNumber,
         string $revenueAccount,
     ): string {
+        $child = $childInvoice->getKind();
+        if (!$child) {
+            throw new \LogicException('Eine Kinderrechnung ist keinem Kind zugeordnet.');
+        }
         return $this->record(self::COUNTER_FIELD_COUNT, [
             1 => '2', 2 => $lineNumber, 3 => '1', 5 => $externalDocumentNumber,
             6 => '0', 7 => $revenueAccount, 8 => '0', 11 => $this->amount(-$amount),

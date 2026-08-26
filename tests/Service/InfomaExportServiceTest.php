@@ -3,12 +3,12 @@
 namespace App\Tests\Service;
 
 use App\Entity\Kind;
+use App\Entity\KinderRechnung;
 use App\Entity\Kundennummern;
 use App\Entity\Organisation;
 use App\Entity\Rechnung;
 use App\Entity\Sepa;
 use App\Entity\Stammdaten;
-use App\Service\BerechnungsService;
 use App\Service\InfomaExportService;
 use PHPUnit\Framework\TestCase;
 
@@ -38,15 +38,19 @@ final class InfomaExportServiceTest extends TestCase
             ->setCreatedAt(new \DateTimeImmutable('2026-06-11'))
             ->setVon(new \DateTimeImmutable('2026-06-01'))
             ->setSumme(119.0);
-        $invoice->addKinder((new Kind())->setVorname('Anna')->setNachname('Mustermann'));
-        $invoice->addKinder((new Kind())->setVorname('Ben')->setNachname('Mustermann'));
+        $invoice->addKinderRechnung((new KinderRechnung())
+            ->setKind((new Kind())->setVorname('Anna')->setNachname('Mustermann'))
+            ->setSumme(70.0)
+            ->setBruttoSumme(80.0)
+            ->setRabatt(10.0));
+        $invoice->addKinderRechnung((new KinderRechnung())
+            ->setKind((new Kind())->setVorname('Ben')->setNachname('Mustermann'))
+            ->setSumme(49.0)
+            ->setBruttoSumme(49.0)
+            ->setRabatt(0.0));
         $sepa->addRechnungen($invoice);
-        $calculationService = $this->createMock(BerechnungsService::class);
-        $calculationService->expects(self::exactly(2))
-            ->method('getPreisforBetreuung')
-            ->willReturnOnConsecutiveCalls(70.0, 49.0);
 
-        $csv = (new InfomaExportService($calculationService))->generate(
+        $csv = (new InfomaExportService())->generate(
             $sepa,
             '400000',
             '120000',
@@ -98,10 +102,8 @@ final class InfomaExportServiceTest extends TestCase
             ->setOrganisation(new Organisation())
             ->setCreatedAt(new \DateTimeImmutable('2026-06-11'))
             ->setEinzugsDatum(new \DateTimeImmutable('2026-06-18'));
-        $calculationService = $this->createMock(BerechnungsService::class);
-
         $this->expectException(\InvalidArgumentException::class);
-        (new InfomaExportService($calculationService))->generate($sepa, '40|0000', '120000', 'EXTSYS', 'SEPA-LS');
+        (new InfomaExportService())->generate($sepa, '40|0000', '120000', 'EXTSYS', 'SEPA-LS');
     }
 
     private function parseAmount(string $amount): float
