@@ -39,13 +39,15 @@ final class SepaDetailController extends AbstractController
     #[Route('/org_accounting/print/detail', name: 'accounting_sepa_print')]
     public function print(Request $request, PrintRechnungService $printRechnungService): mixed
     {
-        $invoice = $this->managerRegistry->getRepository(Rechnung::class)->find($request->query->getInt('id'));
-        $child = $invoice?->getKinder()->first();
-        if (!$invoice || !$child || $child->getSchule()?->getOrganisation() !== $this->getUser()?->getOrganisation()) {
-            throw $this->createNotFoundException();
-        }
+        $invoice = $this->findInvoiceForCurrentOrganisation($request->query->getInt('id'));
+        $fileName = $invoice->getRechnungsnummer() ?: 'Rechnung-'.$invoice->getId();
 
-        return $printRechnungService->printRechnung('Test', $child->getSchule()->getOrganisation(), $invoice, 'D');
+        return $printRechnungService->printRechnung(
+            $fileName,
+            $invoice->getSepa()->getOrganisation(),
+            $invoice,
+            'D',
+        );
     }
 
     #[Route('/org_accounting/print/sepaXML', name: 'accounting_sepa_printXML')]
@@ -121,5 +123,15 @@ final class SepaDetailController extends AbstractController
         }
 
         return $sepa;
+    }
+
+    private function findInvoiceForCurrentOrganisation(int $id): Rechnung
+    {
+        $invoice = $this->managerRegistry->getRepository(Rechnung::class)->find($id);
+        if (!$invoice || $invoice->getSepa()?->getOrganisation() !== $this->getUser()?->getOrganisation()) {
+            throw $this->createNotFoundException();
+        }
+
+        return $invoice;
     }
 }
