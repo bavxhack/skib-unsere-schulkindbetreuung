@@ -2,11 +2,16 @@
 
 namespace App\Service;
 
+use App\Entity\Kind;
 use App\Entity\Rechnung;
 use App\Entity\Sepa;
 
 final class InfomaExportService
 {
+    public function __construct(private readonly BerechnungsService $calculationService)
+    {
+    }
+
     public function generate(Sepa $sepa, string $account, string $counterAccount): string
     {
         $date = $sepa->getCreatedAt() ?? new \DateTimeImmutable();
@@ -18,18 +23,33 @@ final class InfomaExportService
 
         $sequence = 1;
         foreach ($sepa->getRechnungen() as $invoice) {
-            $lines[] = $this->invoiceLine($sepa, $invoice, $account, $sequence);
-            $lines[] = $this->counterAccountLine($invoice, $counterAccount, $sequence);
-            ++$sequence;
+            foreach ($invoice->getKinder() as $child) {
+                $calculationDate = $invoice->getVon() ?? $sepa->getVon();
+                $amount = $this->calculationService->getPreisforBetreuung(
+                    $child,
+                    false,
+                    $calculationDate ? \DateTime::createFromInterface($calculationDate) : null,
+                );
+                $lines[] = $this->invoiceLine($sepa, $invoice, $child, $amount, $account, $sequence);
+                $lines[] = $this->counterAccountLine($invoice, $child, $amount, $counterAccount, $sequence);
+                ++$sequence;
+            }
         }
 
         return implode("\n", $lines)."\n";
     }
 
-    private function invoiceLine(Sepa $sepa, Rechnung $invoice, string $account, int $sequence): string
+    private function invoiceLine(
+        Sepa $sepa,
+        Rechnung $invoice,
+        Kind $child,
+        float $amount,
+        string $account,
+        int $sequence,
+    ): string
     {
         $masterData = $invoice->getStammdaten();
-        $invoiceNumber = $invoice->getRechnungsnummer() ?: 'EXT-'.$invoice->getId();
+        $invoiceNumber = ($invoice->getRechnungsnummer() ?: 'EXT-'.$invoice->getId()).'-K'.$child->getId();
         $bookingDate = $invoice->getCreatedAt() ?? $sepa->getCreatedAt();
         $dueDate = $sepa->getEinzugsDatum();
         $iban = preg_replace('/\s+/', '', (string) $masterData->getIban());
@@ -41,8 +61,9 @@ final class InfomaExportService
         $values = [0 => '1', 1 => $account, 2 => (string) $sequence, 4 => $invoiceNumber,
             6 => $bookingDate->format('d.m.Y'), 7 => $bookingDate->format('d.m.Y'), 8 => '1',
             9 => $customerNumber ? (string) $customerNumber->getKundennummer() : '', 10 => 'EXT-'.$invoiceNumber,
-            11 => '0', 14 => $this->amount((float) $invoice->getSumme()),
-            15 => 'Rechnung mit SEPA-LS '.$sequence, 16 => 'EUR', 17 => $dueDate->format('d.m.Y'),
+            11 => '0', 14 => $this->amount($amount),
+            15 => $this->bookingText($child, $masterData->getVorname(), $masterData->getName()),
+            16 => 'EUR', 17 => $dueDate->format('d.m.Y'),
             20 => '1', 37 => $bankCode, 38 => $bankAccount, 39 => 'SEPA-LS',
             40 => $masterData->getKontoinhaber() ?: trim($masterData->getVorname().' '.$masterData->getName()),
             64 => (string) $masterData->getBic(), 65 => $iban,
@@ -56,13 +77,32 @@ final class InfomaExportService
         return $this->line($fields);
     }
 
-    private function counterAccountLine(Rechnung $invoice, string $counterAccount, int $sequence): string
+    private function counterAccountLine(
+        Rechnung $invoice,
+        Kind $child,
+        float $amount,
+        string $counterAccount,
+        int $sequence,
+    ): string
     {
+        $invoiceNumber = ($invoice->getRechnungsnummer() ?: 'EXT-'.$invoice->getId()).'-K'.$child->getId();
+
         return $this->line([
-            '2', $counterAccount, (string) $sequence, '', $invoice->getRechnungsnummer() ?: 'EXT-'.$invoice->getId(),
-            '0', $counterAccount, '0', '', '', $this->amount(-(float) $invoice->getSumme()),
-            'Gegenkonto '.$sequence,
+            '2', $counterAccount, (string) $sequence, '', $invoiceNumber,
+            '0', $counterAccount, '0', '', '', $this->amount(-$amount),
+            'Gegenkonto '.$child->getVorname().' '.$child->getNachname(),
         ]);
+    }
+
+    private function bookingText(Kind $child, ?string $parentFirstName, ?string $parentLastName): string
+    {
+        return sprintf(
+            'Kind: %s %s; Eltern: %s %s',
+            $child->getVorname(),
+            $child->getNachname(),
+            $parentFirstName,
+            $parentLastName,
+        );
     }
 
     private function amount(float $amount): string
