@@ -51,6 +51,13 @@ final class PrintGebuehrenbescheidService
         ?string $fileName = null,
     ): string {
         $fileName ??= 'Gebuehrenbescheid';
+        $zeitraum = $gebuehren->zeitraumVon !== null && $gebuehren->zeitraumBis !== null
+            ? sprintf(
+                '%s bis %s',
+                $gebuehren->zeitraumVon->format('d.m.Y'),
+                $gebuehren->zeitraumBis->format('d.m.Y'),
+            )
+            : '';
 
         return $this->renderer->render(
             self::TEMPLATE,
@@ -62,6 +69,11 @@ final class PrintGebuehrenbescheidService
                 'stammdaten' => $eltern,
                 'organisation' => $organisation,
                 'gebuehren' => $gebuehren,
+                // Compatibility aliases used by existing city-authored templates. New templates should prefer
+                // gebuehren.angebote and gebuehren.zeitraumVon/zeitraumBis so all fee rows remain available.
+                'angebote' => $gebuehren->angebote,
+                'angebot' => $gebuehren->angebote[0] ?? null,
+                'zeitraum' => $zeitraum,
                 'datum' => new \DateTimeImmutable(),
                 'locale' => $locale,
             ],
