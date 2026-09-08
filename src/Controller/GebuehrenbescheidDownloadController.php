@@ -10,9 +10,9 @@ use App\Service\ElternService;
 use App\Service\Gebuehrenbescheid\FeeSummaryBuilder;
 use App\Service\Gebuehrenbescheid\PrintGebuehrenbescheidService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\HeaderUtils;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 use Symfony\Component\Routing\Annotation\Route;
 
 /**
@@ -69,10 +69,13 @@ final class GebuehrenbescheidDownloadController extends AbstractController
             Response::HTTP_OK,
             ['Content-Type' => 'application/pdf'],
         );
-        $response->headers->setContentDisposition(
-            ResponseHeaderBag::DISPOSITION_ATTACHMENT,
-            $fileName . '.pdf',
-            'gebuehrenbescheid.pdf',
+        $response->headers->set(
+            'Content-Disposition',
+            HeaderUtils::makeDisposition(
+                HeaderUtils::DISPOSITION_ATTACHMENT,
+                $fileName . '.pdf',
+                'gebuehrenbescheid.pdf',
+            ),
         );
 
         return $response;
