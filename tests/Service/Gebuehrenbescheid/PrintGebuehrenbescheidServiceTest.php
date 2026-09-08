@@ -76,6 +76,28 @@ class PrintGebuehrenbescheidServiceTest extends KernelTestCase
         self::assertStringStartsWith('%PDF-', $pdf);
     }
 
+    public function testProvidesCompatibilityVariablesToACityAuthoredTemplate(): void
+    {
+        self::bootKernel();
+        $service = self::getContainer()->get(PrintGebuehrenbescheidService::class);
+        $fixtureFactory = self::getContainer()->get(PreviewFixtureFactory::class);
+
+        $fixture = $fixtureFactory->create();
+        $pdf = $service->render(
+            $this->stadt(<<<'TWIG'
+                <p>{{ zeitraum }}: {{ angebot.bezeichnung }}</p>
+                <p>{{ faelligkeit|date('d.m.Y') }} / {{ chunk|length }} / {{ chunks|length }} / {{ i }}</p>
+                TWIG),
+            $fixture->kind,
+            $fixture->eltern,
+            $fixture->organisation,
+            $fixtureFactory->createStubFeeSummary(),
+            'de',
+        );
+
+        self::assertStringStartsWith('%PDF-', $pdf);
+    }
+
     public function testFallsBackToTheBuiltInLayoutWhenNoTemplateIsAuthored(): void
     {
         self::bootKernel();
