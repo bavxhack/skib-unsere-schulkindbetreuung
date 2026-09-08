@@ -58,6 +58,7 @@ final class PrintGebuehrenbescheidService
                 $gebuehren->zeitraumBis->format('d.m.Y'),
             )
             : '';
+        $faelligkeitsGruppen = array_chunk($gebuehren->faelligkeiten, 5);
 
         return $this->renderer->render(
             self::TEMPLATE,
@@ -69,11 +70,16 @@ final class PrintGebuehrenbescheidService
                 'stammdaten' => $eltern,
                 'organisation' => $organisation,
                 'gebuehren' => $gebuehren,
-                // Compatibility aliases used by existing city-authored templates. New templates should prefer
-                // gebuehren.angebote and gebuehren.zeitraumVon/zeitraumBis so all fee rows remain available.
+                // Compatibility aliases used by existing city-authored templates. New templates should use the
+                // gebuehren DTO directly so every offer and due date remains available.
                 'angebote' => $gebuehren->angebote,
                 'angebot' => $gebuehren->angebote[0] ?? null,
                 'zeitraum' => $zeitraum,
+                'faelligkeiten' => $gebuehren->faelligkeiten,
+                'faelligkeit' => $gebuehren->faelligkeiten[0] ?? null,
+                'chunks' => $faelligkeitsGruppen,
+                'chunk' => $faelligkeitsGruppen[0] ?? [],
+                'i' => 1,
                 'datum' => new \DateTimeImmutable(),
                 'locale' => $locale,
             ],

@@ -84,7 +84,10 @@ class PrintGebuehrenbescheidServiceTest extends KernelTestCase
 
         $fixture = $fixtureFactory->create();
         $pdf = $service->render(
-            $this->stadt('<p>{{ zeitraum }}: {{ angebot.bezeichnung }}</p>'),
+            $this->stadt(<<<'TWIG'
+                <p>{{ zeitraum }}: {{ angebot.bezeichnung }}</p>
+                <p>{{ faelligkeit|date('d.m.Y') }} / {{ chunk|length }} / {{ chunks|length }} / {{ i }}</p>
+                TWIG),
             $fixture->kind,
             $fixture->eltern,
             $fixture->organisation,
